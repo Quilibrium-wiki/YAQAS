@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script version
-SCRIPT_VERSION="1.0"
+SCRIPT_VERSION="1.1"
 
 cat << "EOF"
 ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⣿⣿⣷⣶⣴⣾⣿⣿⣿⣦⡀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -99,7 +99,7 @@ done
 GRPC_PORT=$(grep -oP 'listenGrpcMultiaddr: /ip4/127.0.0.1/tcp/\K\d+' "$HOME/quil/.config/config.yml")
 
 # Check if we are connected to at least one of these peers
-network_info=$(grpcurl -plaintext 127.0.0.1:"$GRPC_PORT" quilibrium.node.node.pb.NodeService.GetNetworkInfo)
+network_info=$($HOME/go/bin/grpcurl -plaintext 127.0.0.1:"$GRPC_PORT" quilibrium.node.node.pb.NodeService.GetNetworkInfo)
 
 # Retrieve the node's IPv4 address
 NODE_IP=$(curl -s -4 icanhazip.com)
