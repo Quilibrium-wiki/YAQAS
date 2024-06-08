@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script version
-SCRIPT_VERSION="1.0"
+SCRIPT_VERSION="1.1"
 
 cat << "EOF"
                                   %#########
@@ -767,7 +767,7 @@ fi
 echo ""
 echo "⏳ Step 3: Downloading latest Quilibrium release..."
 # Clone new Git repo
-git clone --branch release https://source.quilibrium.com/quilibrium/ceremonyclient.git "$QUIL_DIR" || { echo "Failed to clone repository"; exit 1; }
+git clone --branch main https://source.quilibrium.com/quilibrium/ceremonyclient.git "$QUIL_DIR" || { echo "Failed to clone repository"; exit 1; }
 
 # Build the client so you can actually claim rewards... would be nice if this was prebuilt.
 cd "$QUIL_DIR/client" || { echo "Failed to change directory"; exit 1; }
