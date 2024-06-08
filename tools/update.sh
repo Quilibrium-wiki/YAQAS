@@ -29,7 +29,7 @@ cat << "EOF"
 EOF
 
 # Script version
-SCRIPT_VERSION="1.0"
+SCRIPT_VERSION="1.1"
 
 echo ""
 echo "Quilibrium Update Script - Version $SCRIPT_VERSION"
@@ -105,7 +105,7 @@ read -r LAST_UPDATE < "$LAST_UPDATE_FILE"
 CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Check for new commits
-NEW_COMMITS=$(curl -s "https://source.quilibrium.com/api/v4/projects/quilibrium%2Fceremonyclient/repository/commits?ref_name=release&since=$LAST_UPDATE")
+NEW_COMMITS=$(curl -s "https://source.quilibrium.com/api/v4/projects/quilibrium%2Fceremonyclient/repository/commits?ref_name=main&since=$LAST_UPDATE")
 
 if [ "$NEW_COMMITS" == "[]" ]; then
     echo "No new commits since the last update -  Exiting."
@@ -122,7 +122,7 @@ $SUDO systemctl stop quil.service
 TEMP_DIR=$(mktemp -d)
 
 # Clone the new Git repo into the temporary directory
-git clone --branch release https://source.quilibrium.com/quilibrium/ceremonyclient.git "$TEMP_DIR" || { echo "Failed to clone repository"; rm -rf "$TEMP_DIR"; exit 1; }
+git clone --branch main https://source.quilibrium.com/quilibrium/ceremonyclient.git "$TEMP_DIR" || { echo "Failed to clone repository"; rm -rf "$TEMP_DIR"; exit 1; }
 
 # Remove old files except .config and tools folder
 cd "$QUIL_DIR" || { echo "Failed to change directory"; exit 1; }
