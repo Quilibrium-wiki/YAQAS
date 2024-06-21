@@ -29,7 +29,7 @@ cat << "EOF"
 EOF
 
 # Script version
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 
 echo ""
 echo "Quilibrium Update Script - Version $SCRIPT_VERSION"
@@ -76,6 +76,11 @@ send_notification() {
   fi
 }
 
+# Function to compare versions
+version_greater() {
+    [ "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1" ]
+}
+
 # Check for updates if run interactively
 if [ -t 0 ]; then
     check_for_updates
@@ -96,51 +101,68 @@ else
     SUDO="sudo"
 fi
 
-# Stop node
-$SUDO systemctl stop quil.service
-
-# Remove old files except .config and tools folder
-cd "$QUIL_DIR" || { echo "Failed to change directory"; exit 1; }
-find . -maxdepth 1 ! -name '.config' ! -name 'tools' -exec rm -rf {} + > /dev/null 2>&1
+# Get the current local version
+if [ -f "$QUIL_DIR/node_version.txt" ]; then
+    LOCAL_VERSION=$(cat "$QUIL_DIR/node_version.txt")
+else
+    LOCAL_VERSION="0.0.0"
+fi
 
 # Get the latest version from the releases URL
 LATEST_VERSION=$(curl -s https://releases.quilibrium.com/release | grep -oP 'node-\K[0-9.]+(?=-linux-amd64)' | sort -V | tail -1)
 
-# Construct the filenames
-BASE_URL="https://releases.quilibrium.com"
-FILENAME="node-$LATEST_VERSION-$ARCHITECTURE"
+# Compare versions
+if version_greater "$LATEST_VERSION" "$LOCAL_VERSION"; then
+    echo "New version available: $LATEST_VERSION (current version: $LOCAL_VERSION)"
+	
+	# Stop node
+    $SUDO systemctl stop quil.service
+	
+    # Remove old files except .config and tools folder
+    cd "$QUIL_DIR" || { echo "Failed to change directory"; exit 1; }
+    find . -maxdepth 1 ! -name '.config' ! -name 'tools' -exec rm -rf {} + > /dev/null 2>&1
 
-# Download binary and digest
-curl -O "$BASE_URL/$FILENAME"
-curl -O "$BASE_URL/$FILENAME.dgst"
+    # Construct the filenames
+    BASE_URL="https://releases.quilibrium.com"
+    FILENAME="node-$LATEST_VERSION-$ARCHITECTURE"
 
-# Download available signature files
-AVAILABLE_SIGS=$(curl -s https://releases.quilibrium.com/release | grep -oP "$FILENAME.dgst.sig.\d+")
-for SIG in $AVAILABLE_SIGS; do
-    curl -O "$BASE_URL/$SIG"
-done
+    # Download binary and digest
+    curl -O "$BASE_URL/$FILENAME"
+    curl -O "$BASE_URL/$FILENAME.dgst"
 
-# Set execute permissions
-chmod +x "$FILENAME"
+    # Download available signature files
+    AVAILABLE_SIGS=$(curl -s https://releases.quilibrium.com/release | grep -oP "$FILENAME.dgst.sig.\d+")
+    for SIG in $AVAILABLE_SIGS; do
+        curl -O "$BASE_URL/$SIG"
+    done
 
-# Update the systemd service file with the new binary name
-$SUDO sed -i "s|ExecStart=.*|ExecStart=$QUIL_DIR/$FILENAME|g" $SERVICE_FILE
+    # Set execute permissions
+    chmod +x "$FILENAME"
 
-# Download qclient
-mkdir -p "$CLIENT_DIR"
-cd "$CLIENT_DIR" || { echo "Failed to change directory"; exit 1; }
-QCLIENT_VERSION=$(curl -s https://releases.quilibrium.com/qclient-release | grep -oP 'qclient-\K[0-9.]+(?=-linux-amd64)' | sort -V | tail -1)
-QCLIENT_FILE="qclient-$QCLIENT_VERSION-$ARCHITECTURE"
-curl -O "$BASE_URL/$QCLIENT_FILE"
+    # Update the systemd service file with the new binary name
+    $SUDO sed -i "s|ExecStart=.*|ExecStart=$QUIL_DIR/$FILENAME|g" $SERVICE_FILE
 
-# Set execute permissions for qclient
-chmod +x "$QCLIENT_FILE"
+    # Download qclient
+    mkdir -p "$CLIENT_DIR"
+    cd "$CLIENT_DIR" || { echo "Failed to change directory"; exit 1; }
+    QCLIENT_VERSION=$(curl -s https://releases.quilibrium.com/qclient-release | grep -oP 'qclient-\K[0-9.]+(?=-linux-amd64)' | sort -V | tail -1)
+    QCLIENT_FILE="qclient-$QCLIENT_VERSION-$ARCHITECTURE"
+    curl -O "$BASE_URL/$QCLIENT_FILE"
 
-# Start the node
-$SUDO systemctl daemon-reload
-$SUDO systemctl start quil.service
+    # Set execute permissions for qclient
+    chmod +x "$QCLIENT_FILE"
 
-send_notification "✔ Your node has been updated to version $LATEST_VERSION and the service has been restarted"
-if [ -t 0 ]; then
-    echo "$(date): ✔ Your node has been updated to version $LATEST_VERSION and the service has been restarted"
+    # Start the node
+    $SUDO systemctl daemon-reload
+    $SUDO systemctl start quil.service
+
+    # Save the new version to local version file
+    echo "$LATEST_VERSION" > "$QUIL_DIR/node_version.txt"
+
+    send_notification "✔ Your node has been updated to version $LATEST_VERSION and the service has been restarted"
+    if [ -t 0 ]; then
+        echo "$(date): ✔ Your node has been updated to version $LATEST_VERSION and the service has been restarted"
+    fi
+else
+    echo "Your node is already up to date (version $LOCAL_VERSION). No update needed."
 fi
