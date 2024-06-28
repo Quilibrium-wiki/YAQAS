@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script version
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 
 cat << "EOF"
                                   %#########
@@ -45,12 +45,12 @@ echo ""
 
 # Function to check for newer script version
 check_for_updates() {
-    LATEST_VERSION=$(curl -s https://raw.githubusercontent.com/Quilibrium-wiki/YAQAS/main/deploy.sh | grep 'SCRIPT_VERSION="' | head -1 | cut -d'"' -f2)
+    LATEST_VERSION=$(curl -s https://raw.githubusercontent.com/Quilibrium-wiki/YAQAS/main/deploy.sh?token=$(date +%s) | grep 'SCRIPT_VERSION="' | head -1 | cut -d'"' -f2)
     if [ "$SCRIPT_VERSION" != "$LATEST_VERSION" ]; then
         echo "A newer version of this script is available (v$LATEST_VERSION)."
         read -p "Do you want to download the newer version? (y/n): " RESPONSE
         if [ "$RESPONSE" == "y" ] || [ "$RESPONSE" == "Y" ]; then
-            curl -o deploy.sh https://raw.githubusercontent.com/Quilibrium-wiki/YAQAS/main/deploy.sh
+            curl -o deploy.sh https://raw.githubusercontent.com/Quilibrium-wiki/YAQAS/main/deploy.sh?token=$(date +%s)
             echo "New version downloaded. Please run the script again."
             exit 0
         fi
@@ -68,6 +68,7 @@ else
 fi
 
 QUIL_DIR="$HOME/quil"
+CLIENT_DIR="$QUIL_DIR/client"
 TOOLS_DIR="$QUIL_DIR/tools"
 CPU_LIMIT=""
 TOOLS_URLS=(
@@ -80,48 +81,9 @@ TOOLS_URLS=(
 ARCHITECTURE=$(uname -m)
 ARCHITECTURE=${ARCHITECTURE/x86_64/linux-amd64} # Map x86_64 to linux-amd64
 ARCHITECTURE=${ARCHITECTURE/aarch64/linux-arm64} # Map aarch64 to linux-arm64
-GO_VERSION="1.20.14"
-GO_TAR="go$GO_VERSION.$ARCHITECTURE.tar.gz"
-GO_URL="https://golang.org/dl/$GO_TAR"
 LOG_FILE="$HOME/quil/tools/YAQAS.log"
 CHAT_ID_FILE="$HOME/quil/tools/chat_id.txt"
 NODE_IP=$(curl -s -4 icanhazip.com)
-
-# Function to install Go (only needed to build client claiming rewards ugh...)
-install_go() {
-    # Download the Go tarball
-    wget -q $GO_URL -O /tmp/$GO_TAR
-    
-    # Extract the Go tarball to /usr/local
-    $SUDO tar -C /usr/local -xzf /tmp/$GO_TAR
-    
-    # Set Go binary path and Go workspace path
-    GO_BIN_PATH="/usr/local/go/bin"
-    GO_WORKSPACE="$HOME/go"
-    
-    # Add Go binary path and Go workspace path to ~/.bashrc
-    if ! grep -q "$GO_BIN_PATH" ~/.bashrc; then
-        echo 'export PATH=$PATH:'"$GO_BIN_PATH" >> ~/.bashrc
-    fi
-    if ! grep -q "$GO_WORKSPACE/bin" ~/.bashrc; then
-        echo 'export PATH=$PATH:'"$GO_WORKSPACE/bin" >> ~/.bashrc
-    fi
-    if ! grep -q 'export GOPATH' ~/.bashrc; then
-        echo 'export GOPATH='"$GO_WORKSPACE" >> ~/.bashrc
-    fi
-    
-    # Export paths for the current shell session
-    export PATH=$PATH:$GO_BIN_PATH:$GO_WORKSPACE/bin
-    export GOPATH=$GO_WORKSPACE
-    
-    # Check if Go is installed correctly
-    if command -v go &> /dev/null; then
-        echo "Go has been installed successfully."
-        echo "Go version: $(go version)"
-    else
-        echo "There was an issue installing Go."
-    fi
-}
 
 # Function to check if a port is in use
 check_port_in_use() {
@@ -636,26 +598,12 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-$SUDO apt-get install -y jq cron wget unzip zip openssh-client sshpass lsof git base58 > /dev/null 2>&1
+$SUDO apt-get install -y jq cron wget unzip zip openssh-client sshpass lsof base58 > /dev/null 2>&1
 if [ $? -ne 0 ]; then
     echo "❌ Error: Failed to install prerequisites. Exiting."
     exit 1
 fi
 
-# Check if Go is already installed (to build the client to claim rewards)
-if ! command -v go &> /dev/null; then
-    install_go
-    if [ $? -ne 0 ]; then
-        echo "❌ Error: Failed to install Go. Exiting."
-        exit 1
-    fi
-fi
-
-go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest > /dev/null 2>&1
-if [ $? -ne 0 ]; then
-    echo "❌ Error: Failed to install grpcurl. Exiting."
-    exit 1
-fi
 echo "✅ All prerequisites installed successfully!"
 
 echo ""
@@ -766,23 +714,63 @@ fi
 
 echo ""
 echo "⏳ Step 3: Downloading latest Quilibrium release..."
-# Clone new Git repo
-git clone --branch release-cdn https://source.quilibrium.com/quilibrium/ceremonyclient.git "$QUIL_DIR" || { echo "Failed to clone repository"; exit 1; }
 
-# Build the client so you can actually claim rewards... would be nice if this was prebuilt.
-cd "$QUIL_DIR/client" || { echo "Failed to change directory"; exit 1; }
-GOEXPERIMENT=arenas go build -o qclient main.go > /dev/null
-
-# Only keep relevant files (yes this is fugly, but hey what can you do...)
+mkdir -p "$QUIL_DIR"
 cd "$QUIL_DIR" || { echo "Failed to change directory"; exit 1; }
-find node -type f -name "*$ARCHITECTURE*" -exec mv {} . \;
-find . -maxdepth 1 ! -name "*$ARCHITECTURE*" ! -name 'client' ! -name '.config' -exec rm -rf {} + > /dev/null 2>&1
 
-# Get the binary filename
-BINARY_NAME=$(ls "$QUIL_DIR" | grep "$ARCHITECTURE" | grep -v ".dgst")
+# Get the latest version from the releases URL
+LATEST_VERSION=$(curl -s https://releases.quilibrium.com/release | grep -oP 'node-\K[0-9.]+(?=-linux-amd64)' | sort -V | tail -1)
+
+# Construct the filenames
+BASE_URL="https://releases.quilibrium.com"
+FILENAME="node-$LATEST_VERSION-$ARCHITECTURE"
+
+# Download binary and digest
+curl -O "$BASE_URL/$FILENAME"
+curl -O "$BASE_URL/$FILENAME.dgst"
+
+# Download available signature files
+AVAILABLE_SIGS=$(curl -s https://releases.quilibrium.com/release | grep -oP "$FILENAME.dgst.sig.\d+")
+for SIG in $AVAILABLE_SIGS; do
+    curl -O "$BASE_URL/$SIG"
+done
 
 # Set execute permissions
-chmod +x "$QUIL_DIR/$BINARY_NAME"
+chmod +x "$FILENAME"
+
+# Download qclient
+mkdir -p "$CLIENT_DIR"
+cd "$CLIENT_DIR" || { echo "Failed to change directory"; exit 1; }
+QCLIENT_VERSION=$(curl -s https://releases.quilibrium.com/qclient-release | grep -oP 'qclient-\K[0-9.]+(?=-linux-amd64)' | sort -V | tail -1)
+QCLIENT_FILE="qclient-$QCLIENT_VERSION-$ARCHITECTURE"
+curl -O "$BASE_URL/$QCLIENT_FILE"
+
+# Set execute permissions for qclient
+chmod +x "$QCLIENT_FILE"
+
+# grpcurl binaries - hardcoded because I got lazy
+URL_AMD64="https://github.com/fullstorydev/grpcurl/releases/download/v1.9.1/grpcurl_1.9.1_linux_amd64.deb"
+URL_ARM64="https://github.com/fullstorydev/grpcurl/releases/download/v1.9.1/grpcurl_1.9.1_linux_arm64.deb"
+
+# Download and install the appropriate .deb file
+if [ "$ARCHITECTURE" == "linux-amd64" ]; then
+    wget -O grpcurl.deb "$URL_AMD64"
+elif [ "$ARCHITECTURE" == "linux-arm64" ]; then
+    wget -O grpcurl.deb "$URL_ARM64"
+else
+    echo "Unsupported architecture: $ARCHITECTURE"
+    exit 1
+fi
+
+# Install the downloaded .deb file
+$SUDO dpkg -i grpcurl.deb
+
+# Clean up
+rm grpcurl.deb
+
+# Create symlink to maintain backwards compatibility with older YAQAS deployments
+mkdir -p $HOME/go/bin
+ln -s /usr/bin/grpcurl $HOME/go/bin/grpcurl
 
 echo ""
 echo "⚡ Step 4: Creating directories..."
@@ -825,7 +813,7 @@ After=network.target
 [Service]
 User=$USER
 WorkingDirectory=$HOME/quil
-ExecStart=$HOME/quil/$BINARY_NAME
+ExecStart=$HOME/quil/$FILENAME
 Restart=always
 RestartSec=3
 TimeoutStopSec=3
@@ -923,7 +911,7 @@ enable_telegram_notifications
 
 echo ""
 echo "✨ *** Congratulations! Your Quilibrium node is now up and running! ***"
-PEER_ID=$($HOME/quil/$BINARY_NAME -peer-id | grep -oP 'Peer ID: \K.*')
+PEER_ID=$($HOME/quil/$FILENAME -peer-id | grep -oP 'Peer ID: \K.*')
 echo "✌ Your Peer ID is: $PEER_ID"
 echo ""
 echo "❔ You can check your node's status by running the following command: $SUDO service quil status"
