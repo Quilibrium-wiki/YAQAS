@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script version
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 
 cat << "EOF"
                                   %#########
@@ -815,9 +815,10 @@ User=$USER
 WorkingDirectory=$HOME/quil
 ExecStart=$HOME/quil/$FILENAME
 Restart=always
-RestartSec=3
-TimeoutStopSec=3
+RestartSec=5
+TimeoutStopSec=30
 KillMode=control-group
+KillSignal=SIGINT
 $CPU_LIMIT
 Environment="GOMAXPROCS=$GOMAXPROCS"
 
