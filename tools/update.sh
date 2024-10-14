@@ -29,7 +29,7 @@ cat << "EOF"
 EOF
 
 # Script version
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 
 echo ""
 echo "Quilibrium Update Script - Version $SCRIPT_VERSION"
@@ -118,9 +118,9 @@ if version_greater "$LATEST_VERSION" "$LOCAL_VERSION"; then
 	# Stop node
     $SUDO systemctl stop quil.service
 	
-    # Remove old files except .config and tools folder
+    # Remove old files except hidden and tools folders
     cd "$QUIL_DIR" || { echo "Failed to change directory"; exit 1; }
-    find . -maxdepth 1 ! -name '.config' ! -name 'tools' -exec rm -rf {} + > /dev/null 2>&1
+    find . -maxdepth 1 ! -name '.*' ! -name 'tools' -exec rm -rf {} + > /dev/null 2>&1
 
     # Construct the filenames
     BASE_URL="https://releases.quilibrium.com"
@@ -148,6 +148,13 @@ if version_greater "$LATEST_VERSION" "$LOCAL_VERSION"; then
     QCLIENT_VERSION=$(curl -s https://releases.quilibrium.com/qclient-release | grep -oP 'qclient-\K[0-9.]+(?=-linux-amd64)' | sort -V | tail -1)
     QCLIENT_FILE="qclient-$QCLIENT_VERSION-$ARCHITECTURE"
     curl -O "$BASE_URL/$QCLIENT_FILE"
+    curl -O "$BASE_URL/$QCLIENT_FILE.dgst"
+
+    # Download available qclient signature files
+    AVAILABLE_CSIGS=$(curl -s https://releases.quilibrium.com/qclient-release  | grep -oP "$QCLIENT_FILE.dgst.sig.\d+")
+    for CSIG in $AVAILABLE_CSIGS; do
+        curl -O "$BASE_URL/$CSIG"
+    done
 
     # Set execute permissions for qclient
     chmod +x "$QCLIENT_FILE"
